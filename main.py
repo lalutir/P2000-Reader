@@ -3,62 +3,32 @@ import os
 import time
 from bs4 import BeautifulSoup
 
+def send_notification(alert, ntfy_topic):
+    """Sends a notification using ntfy."""
+    if not ntfy_topic:
+        print("NTFY_TOPIC environment variable not set. Skipping notification.")
+        return
+        
+    try:
+        requests.post(
+            f"https://ntfy.sh/{ntfy_topic}",
+            data=alert['message'].encode('utf-8'),
+            headers={
+                "Title": f"New P2000 Alert: {alert['service']}",
+                "Priority": "high",
+                "Tags": "warning"
+            })
+        print("--> Notification sent!")
+    except Exception as e:
+        print(f"--> Failed to send notification: {e}")
+
 def clear_screen():
     """Clears the console screen."""    
-    # For Windows
     if os.name == 'nt':
         os.system('cls')
-    # For macOS and Linux (os.name is 'posix')
     else:
         os.system('clear')
 
-def select_region():
-    """Displays a menu of regions and returns the chosen URL parameter and name."""
-    regions = {
-        "1": {"name": "Alle Regio's", "param": ""},
-        "2": {"name": "KNRM", "param": "rb=1"},
-        "3": {"name": "Lifeliners", "param": "ll=1"},
-        "4": {"name": "Groningen", "param": "groningen=1"},
-        "5": {"name": "Friesland", "param": "friesland=1"},
-        "6": {"name": "Drenthe", "param": "drenthe=1"},
-        "7": {"name": "IJsselland", "param": "ijsselland=1"},
-        "8": {"name": "Twente", "param": "twente=1"},
-        "9": {"name": "Noord- en Oost Gelderland", "param": "nogland=1"},
-        "10": {"name": "Gelderland-Midden", "param": "glandmidden=1"},
-        "11": {"name": "Gelderland-Zuid", "param": "glandzuid=1"},
-        "12": {"name": "Utrecht", "param": "utrecht=1"},
-        "13": {"name": "Noord-Holland Noord", "param": "nholn=1"},
-        "14": {"name": "Zaanstreek-Waterland", "param": "zwland=1"},
-        "15": {"name": "Kennemerland", "param": "kennemerland=1"},
-        "16": {"name": "Amsterdam-Amstelland", "param": "adamal=1"},
-        "17": {"name": "Gooi en Vechtstreek", "param": "gooienvechtstr=1"},
-        "18": {"name": "Haaglanden", "param": "haagl=1"},
-        "19": {"name": "Hollands Midden", "param": "holmid=1"},
-        "20": {"name": "Rotterdam-Rijnmond", "param": "rdamrm=1"},
-        "21": {"name": "Zuid-Holland Zuid", "param": "zhz=1"},
-        "22": {"name": "Zeeland", "param": "zeeland=1"},
-        "23": {"name": "Midden- en West Brabant", "param": "mewbranant=1"},
-        "24": {"name": "Brabant Noord", "param": "brabantn=1"},
-        "25": {"name": "Brabant Zuid-Oost", "param": "brabantzo=1"},
-        "26": {"name": "Limburg Noord", "param": "limburgn=1"},
-        "27": {"name": "Limburg Zuid", "param": "limburgz=1"},
-        "28": {"name": "Flevoland", "param": "flevol=1"},
-    }
-    
-    print("--- Select a Region ---")
-    for key, value in regions.items():
-        print(f"{key:>2}. {value['name']}")
-        
-    while True:
-        try:
-            choice = input(f"Enter a number (1-{len(regions)}): ")
-            if choice in regions:
-                return regions[choice]['param'], regions[choice]['name']
-            else:
-                print("Invalid choice, please try again.")
-        except (ValueError, KeyError):
-            print("Invalid input. Please enter a number.")
-        
 def scrape(url):
     """Scrapes and returns the single latest alert from the given URL."""
     try:
@@ -92,10 +62,7 @@ def scrape(url):
                 unique_alerts.append(alert)
                 seen_alerts.add(identifier)
 
-        if not unique_alerts:
-            return None # Return None if no alerts are found
-        else:
-            return unique_alerts[0] # Return the latest alert data
+        return unique_alerts[0] if unique_alerts else None
 
     except requests.exceptions.RequestException as e:
         print(f"\nAn error occurred while trying to fetch the website: {e}")
@@ -104,40 +71,64 @@ def scrape(url):
 def main():
     """Main function to select a region and enter the automatic refresh loop."""
     clear_screen()
-    region_param, region_name = select_region()
+
+    ntfy_topic = os.environ.get('NTFY_TOPIC')
+        
     base_url = 'http://www.p2000-online.net/p2000.py'
-    url = f"{base_url}?{region_param}" if region_param else base_url
+    url = f"{base_url}" 
     
+    if ntfy_topic:
+        print(f"--- Notifications will be sent to ntfy.sh/{ntfy_topic} ---")
+    else:
+        print("--- Notifications are disabled (NTFY_TOPIC not set) ---")
+
     last_alert_identifier = None
 
-    try:
-        while True:
-            clear_screen()
+    while True:
+        latest_alert = scrape(url)
+
+        if latest_alert:
+            current_alert_identifier = (latest_alert['datetime'], latest_alert['message'])
             
-            latest_alert = scrape(url)
-
-            if latest_alert:
-                current_alert_identifier = (latest_alert['datetime'], latest_alert['message'])
+            if current_alert_identifier != last_alert_identifier:
+                clear_screen()
+                print(f"--- New Alert ---")
+                last_alert_identifier = current_alert_identifier
                 
-                if current_alert_identifier != last_alert_identifier:
-                    print("--- New Alert ---")
-                    last_alert_identifier = current_alert_identifier
-                    new_alert = 1
-                else:
-                    print("--- No New Alert ---")
-                    new_alert = 0
-
                 print(f"Time:    {latest_alert['datetime']}")
                 print(f"Service: {latest_alert['service']}")
                 print(f"Region:  {latest_alert['region']}")
                 print(f"Message: {latest_alert['message']}")
                 print("--------------------")
-            else:
-                print("No alerts found for this region.")
-
-            time.sleep(10)
-    except KeyboardInterrupt:
-        raise KeyboardInterrupt("Script stopped by user. Exiting.")
+                
+                if "ZOETMR" in latest_alert['service'].upper():
+                    print("--> Service matches any of locations, attempting to send notification...")
+                    send_notification(latest_alert, ntfy_topic)
+                elif "ZOETMR" in latest_alert['message'].upper():
+                    print("--> Service matches any of locations, attempting to send notification...")
+                    send_notification(latest_alert, ntfy_topic)
+                elif "zoetermeer" in latest_alert['service'].lower():
+                    print("--> Service matches any of locations, attempting to send notification...")
+                    send_notification(latest_alert, ntfy_topic)
+                elif "zoetermeer" in latest_alert['message'].lower():
+                    print("--> Service matches any of locations, attempting to send notification...")
+                    send_notification(latest_alert, ntfy_topic)
+                elif "BLEISW" in latest_alert['service'].upper():
+                    print("--> Service matches any of locations, attempting to send notification...")
+                    send_notification(latest_alert, ntfy_topic)
+                elif "BLEISW" in latest_alert['message'].upper():
+                    print("--> Service matches any of locations, attempting to send notification...")
+                    send_notification(latest_alert, ntfy_topic)
+                elif "bleiswijk" in latest_alert['service'].lower():
+                    print("--> Service matches any of locations, attempting to send notification...")
+                    send_notification(latest_alert, ntfy_topic)
+                elif "bleiswijk" in latest_alert['message'].lower():
+                    print("--> Service matches any of locations, attempting to send notification...")
+                    send_notification(latest_alert, ntfy_topic)
+                else:
+                    print("--> Service does not match locations, skipping notification.")
+        
+        time.sleep(1)
 
 if __name__ == "__main__":
     main()
