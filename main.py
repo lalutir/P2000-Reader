@@ -2,6 +2,55 @@ import requests
 import os
 import time
 from bs4 import BeautifulSoup
+import signal
+import sys
+
+def send_startup_notification(ntfy_topic):
+    """Sends a startup notification using ntfy."""
+    if not ntfy_topic:
+        return 
+    
+    try:
+        print("--> Sending startup notification...")
+        requests.post(
+            f"https://ntfy.sh/{ntfy_topic}",
+            data="The P2000 Alerter script has been updated, update log in Github will be updated ASAP",
+            headers={
+                "Title": "P2000 Alerter: Service Restarted",
+                "Priority": "high",
+                "Tags": "rocket",
+                "Click": "https://github.com/lalutir/P2000-Reader/releases"
+            })
+        print("--> Startup notification sent!")
+    except Exception as e:
+        print(f"--> Failed to send startup notification: {e}")
+
+def send_shutdown_notification(ntfy_topic):
+    """Sends a shutdown notification using ntfy."""
+    if not ntfy_topic:
+        print("NTFY_TOPIC not set. Skipping shutdown notification.")
+        return
+    
+    try:
+        print("--> Sending shutdown notification...")
+        requests.post(
+            f"https://ntfy.sh/{ntfy_topic}",
+            data="The P2000 Alerter script is paused for maintenance.",
+            headers={
+                "Title": "P2000 Alerter: Service Shutting Down",
+                "Priority": "high",
+                "Tags": "information_source"
+            })
+        print("--> Shutdown notification sent!")
+    except Exception as e:
+        print(f"--> Failed to send shutdown notification: {e}")
+
+def shutdown_handler(signum, frame):
+    """Handles graceful shutdown."""
+    print("\nShutdown signal received. Exiting gracefully...")
+    ntfy_topic = os.environ.get('NTFY_TOPIC')
+    send_shutdown_notification(ntfy_topic)
+    sys.exit(0)
 
 def send_notification(alert, ntfy_topic):
     """Sends a notification using ntfy."""
@@ -9,14 +58,20 @@ def send_notification(alert, ntfy_topic):
         print("NTFY_TOPIC environment variable not set. Skipping notification.")
         return
         
+    message_body = (
+        f"{alert['message']}\n\n"
+        "click on notification to go to p2000-online.net"
+    )
+        
     try:
         requests.post(
             f"https://ntfy.sh/{ntfy_topic}",
-            data=alert['message'].encode('utf-8'),
+            data=message_body.encode('utf-8'),
             headers={
                 "Title": f"New Alert: {alert['service']}",
                 "Priority": "high",
-                "Tags": "police_car" if alert['service'] == "Politie" else "fire_engine" if alert['service'] == "Brandweer" else "ambulance"
+                "Tags": "police_car" if alert['service'] == "Politie" else "fire_engine" if alert['service'] == "Brandweer" else "ambulance",
+                "Click": "https://www.p2000-online.net"
             })
         print("--> Notification sent!")
     except Exception as e:
@@ -70,6 +125,10 @@ def scrape(url):
 
 def main():
     """Main function to select a region and enter the automatic refresh loop."""
+    
+    signal.signal(signal.SIGTERM, shutdown_handler)
+    signal.signal(signal.SIGINT, shutdown_handler)
+    
     clear_screen()
 
     ntfy_topic = os.environ.get('NTFY_TOPIC')
@@ -81,7 +140,9 @@ def main():
         print(f"--- Notifications will be sent to ntfy.sh/{ntfy_topic} ---")
     else:
         print("--- Notifications are disabled (NTFY_TOPIC not set) ---")
-
+        
+    send_startup_notification(ntfy_topic)
+    
     last_alert_identifier = None
 
     while True:
