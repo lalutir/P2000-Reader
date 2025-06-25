@@ -14,9 +14,9 @@ def send_notification(alert, ntfy_topic):
             f"https://ntfy.sh/{ntfy_topic}",
             data=alert['message'].encode('utf-8'),
             headers={
-                "Title": f"New P2000 Alert: {alert['service']}",
+                "Title": f"New Alert: {alert['service']}",
                 "Priority": "high",
-                "Tags": "warning"
+                "Tags": "police_car" if alert['service'] == "Politie" else "fire_engine" if alert['service'] == "Brandweer" else "ambulance"
             })
         print("--> Notification sent!")
     except Exception as e:
