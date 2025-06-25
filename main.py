@@ -125,6 +125,12 @@ def main():
                 elif "bleiswijk" in latest_alert['message'].lower():
                     print("--> Service matches any of locations, attempting to send notification...")
                     send_notification(latest_alert, ntfy_topic)
+                elif "DELFT" in latest_alert['message'].upper():
+                    print("--> Service matches any of locations, attempting to send notification...")
+                    send_notification(latest_alert, ntfy_topic)
+                elif "delft" in latest_alert['message'].lower():
+                    print("--> Service matches any of locations, attempting to send notification...")
+                    send_notification(latest_alert, ntfy_topic)
                 else:
                     print("--> Service does not match locations, skipping notification.")
         
