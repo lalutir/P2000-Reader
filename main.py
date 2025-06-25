@@ -71,7 +71,7 @@ def send_notification(alert, ntfy_topic):
                 "Title": f"New Alert: {alert['service']}",
                 "Priority": "high",
                 "Tags": "police_car" if alert['service'] == "Politie" else "fire_engine" if alert['service'] == "Brandweer" else "ambulance",
-                "Click": "https://www.p2000-online.net"
+                "Click": "https://www.p2000-online.net/alleregiosf.html"
             })
         print("--> Notification sent!")
     except Exception as e:
