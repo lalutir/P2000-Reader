@@ -60,7 +60,7 @@ def send_notification(alert, ntfy_topic):
         
     message_body = (
         f"{alert['message']}\n\n"
-        "click on notification to go to p2000-online.net"
+        "Klik op de melding om naar p2000-online.net te gaan"
     )
         
     try:
@@ -68,7 +68,7 @@ def send_notification(alert, ntfy_topic):
             f"https://ntfy.sh/{ntfy_topic}",
             data=message_body.encode('utf-8'),
             headers={
-                "Title": f"New Alert: {alert['service']}",
+                "Title": f"Nieuwe Melding: {alert['service']}",
                 "Priority": "high",
                 "Tags": "police_car" if alert['service'] == "Politie" else "fire_engine" if alert['service'] == "Brandweer" else "ambulance",
                 "Click": "https://www.p2000-online.net/alleregiosf.html"
