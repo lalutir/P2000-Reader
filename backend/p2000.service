@@ -1,0 +1,15 @@
+[Unit]
+Description=P2000 Reader API
+After=network.target
+
+[Service]
+User=lalutir
+Group=lalutir
+WorkingDirectory=/home/lalutir/p2000-reader/backend
+ExecStart=/home/lalutir/p2000-reader/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+Environment=SCRAPE_INTERVAL_SECONDS=30
+
+[Install]
+WantedBy=multi-user.target

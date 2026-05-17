@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.env
+
+# VAPID keys (generated at runtime, never commit)
+backend/vapid_private.pem
+backend/vapid_public.pem
+
+# Node
+node_modules/
+frontend/web/dist/
+frontend/web/.vite/
+
+# Expo / React Native
+frontend/mobile/.expo/
+frontend/mobile/dist/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# OS
+.DS_Store
+Thumbs.db
