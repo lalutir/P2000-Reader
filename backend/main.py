@@ -33,6 +33,7 @@ BASE_DIR = Path(__file__).parent
 VAPID_PRIVATE_PATH = BASE_DIR / "vapid_private.pem"
 VAPID_PUBLIC_PATH = BASE_DIR / "vapid_public.pem"
 VAPID_SUB = "mailto:admin@lalutir.com"
+SUBSCRIPTIONS_PATH = BASE_DIR / "subscriptions.json"
 
 P2000_URL = "http://www.p2000-online.net/p2000.py"
 
@@ -43,8 +44,18 @@ SERVICE_CLASS_MAP = {"Br": "Brandweer", "Am": "Ambulance", "Po": "Politie"}
 alert_buffer: collections.deque = collections.deque(maxlen=50)
 seen_ids: set = set()
 connected_clients: list[WebSocket] = []
-web_push_subscriptions: list[dict] = []
 vapid_public_key_b64: str = ""
+
+def _load_subscriptions() -> list[dict]:
+    try:
+        return json.loads(SUBSCRIPTIONS_PATH.read_text()) if SUBSCRIPTIONS_PATH.exists() else []
+    except Exception:
+        return []
+
+def _save_subscriptions() -> None:
+    SUBSCRIPTIONS_PATH.write_text(json.dumps(web_push_subscriptions))
+
+web_push_subscriptions: list[dict] = _load_subscriptions()
 
 # --- VAPID key management ---
 def _generate_vapid_keys() -> None:
@@ -149,6 +160,8 @@ async def _send_web_push(alert: dict) -> None:
                 logger.error(f"WebPush error: {e}")
     for s in dead:
         web_push_subscriptions.remove(s)
+    if dead:
+        _save_subscriptions()
 
 
 # --- WebSocket broadcast ---
@@ -247,6 +260,7 @@ async def subscribe(sub: _WebPushSub):
     d = sub.model_dump()
     if not any(s["endpoint"] == sub.endpoint for s in web_push_subscriptions):
         web_push_subscriptions.append(d)
+        _save_subscriptions()
     return {"ok": True}
 
 
@@ -254,6 +268,7 @@ async def subscribe(sub: _WebPushSub):
 async def unsubscribe(sub: _WebPushSub):
     global web_push_subscriptions
     web_push_subscriptions[:] = [s for s in web_push_subscriptions if s["endpoint"] != sub.endpoint]
+    _save_subscriptions()
     return {"ok": True}
 
 
