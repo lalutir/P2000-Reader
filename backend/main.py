@@ -9,6 +9,7 @@ import signal
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -31,7 +32,7 @@ if scrape_interval not in VALID_INTERVALS:
 BASE_DIR = Path(__file__).parent
 VAPID_PRIVATE_PATH = BASE_DIR / "vapid_private.pem"
 VAPID_PUBLIC_PATH = BASE_DIR / "vapid_public.pem"
-VAPID_CLAIMS = {"sub": "mailto:admin@lalutir.com"}
+VAPID_SUB = "mailto:admin@lalutir.com"
 
 P2000_URL = "http://www.p2000-online.net/p2000.py"
 
@@ -129,13 +130,16 @@ async def _send_web_push(alert: dict) -> None:
     dead = []
     for sub in list(web_push_subscriptions):
         try:
+            parsed = urlparse(sub["endpoint"])
+            aud = f"{parsed.scheme}://{parsed.netloc}"
+            claims = {"sub": VAPID_SUB, "aud": aud}
             await asyncio.get_event_loop().run_in_executor(
                 None,
-                lambda s=sub: webpush(
+                lambda s=sub, c=claims: webpush(
                     subscription_info=s,
                     data=data,
                     vapid_private_key=str(VAPID_PRIVATE_PATH),
-                    vapid_claims=VAPID_CLAIMS,
+                    vapid_claims=c,
                 ),
             )
         except WebPushException as e:
