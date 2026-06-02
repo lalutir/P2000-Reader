@@ -157,6 +157,22 @@ body {
   color: #cbd5e0;
 }
 
+.notif-btn {
+  background: none;
+  border: 1px solid #4a5568;
+  border-radius: 6px;
+  color: #e2e8f0;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 4px 8px;
+  flex-shrink: 0;
+}
+
+.notif-btn:hover {
+  border-color: #90cdf4;
+}
+
 @media (max-width: 480px) {
   .header h1 { font-size: 1rem; }
   .status { display: none; }

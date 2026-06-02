@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-const WS_URL = 'wss://lalutir.com/api/ws'
-const API_BASE = 'https://lalutir.com'
+const IS_DEV = import.meta.env.DEV
+const WS_URL = IS_DEV
+  ? 'ws://127.0.0.1:8000/api/ws'
+  : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/api/ws`
+const API_BASE = IS_DEV ? 'http://127.0.0.1:8000' : ''
 const STORAGE_KEY = 'p2000_alerts'
 const MAX_ALERTS = 50
 
@@ -42,10 +45,35 @@ function loadStored() {
   }
 }
 
+async function setupPushSubscription() {
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js')
+    const { publicKey } = await fetch(`${API_BASE}/api/vapid-public-key`).then(r => r.json())
+    let sub = await reg.pushManager.getSubscription()
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      })
+    }
+    await fetch(`${API_BASE}/api/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sub.toJSON()),
+    })
+  } catch (e) {
+    console.error('Push setup failed:', e)
+  }
+}
+
 export default function App() {
   const [alerts, setAlerts] = useState(loadStored)
   const [connected, setConnected] = useState(false)
   const [interval, setIntervalVal] = useState(30)
+  const [notifState, setNotifState] = useState(() => {
+    if (!('Notification' in window)) return 'unsupported'
+    return Notification.permission // 'default' | 'granted' | 'denied'
+  })
   const wsRef = useRef(null)
   const delayRef = useRef(1000)
   const timerRef = useRef(null)
@@ -90,7 +118,9 @@ export default function App() {
 
   useEffect(() => {
     connect()
-    setupPush()
+    if ('serviceWorker' in navigator && Notification.permission === 'granted') {
+      setupPushSubscription()
+    }
     return () => {
       clearTimeout(timerRef.current)
       wsRef.current?.close()
@@ -104,30 +134,16 @@ export default function App() {
     }
   }
 
-  async function setupPush() {
-    if (!('Notification' in window) || !('serviceWorker' in navigator)) return
+  async function enableNotifications() {
+    setNotifState('requesting')
     const permission = await Notification.requestPermission()
-    if (permission !== 'granted') return
-    try {
-      const reg = await navigator.serviceWorker.register('/sw.js')
-      const { publicKey } = await fetch(`${API_BASE}/api/vapid-public-key`).then(r => r.json())
-
-      let sub = await reg.pushManager.getSubscription()
-      if (!sub) {
-        sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey),
-        })
-      }
-      await fetch(`${API_BASE}/api/subscribe`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sub.toJSON()),
-      })
-    } catch (e) {
-      console.error('Push setup failed:', e)
+    setNotifState(permission)
+    if (permission === 'granted') {
+      await setupPushSubscription()
     }
   }
+
+  const showNotifButton = notifState === 'default' && 'serviceWorker' in navigator
 
   return (
     <div className="app">
@@ -147,6 +163,15 @@ export default function App() {
               <option key={o.seconds} value={o.seconds}>{o.label}</option>
             ))}
           </select>
+          {showNotifButton && (
+            <button
+              className="notif-btn"
+              onClick={enableNotifications}
+              title="Schakel pushmeldingen in"
+            >
+              🔔
+            </button>
+          )}
         </div>
       </header>
 

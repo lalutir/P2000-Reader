@@ -1,6 +1,6 @@
 # P2000 Reader
 
-Real-time Dutch emergency services feed reader. Scrapes [p2000-online.net](http://www.p2000-online.net/p2000.py) and broadcasts every new alert to connected web and mobile clients via WebSocket, with Web Push and Expo push notifications.
+Real-time Dutch emergency services feed reader. Scrapes [p2000-online.net](http://www.p2000-online.net/p2000.py) and broadcasts every new alert to connected browsers via WebSocket, with optional Web Push notifications.
 
 ## Repository structure
 
@@ -11,26 +11,17 @@ P2000-Reader/
 │   ├── requirements.txt
 │   └── p2000.service        # systemd unit file
 ├── frontend/
-│   ├── web/                 # React + Vite web app
-│   │   ├── public/
-│   │   │   ├── sw.js        # Service worker for Web Push
-│   │   │   ├── icon.png
-│   │   │   └── badge.png
-│   │   ├── src/
-│   │   │   ├── App.jsx
-│   │   │   ├── App.css
-│   │   │   └── main.jsx
-│   │   ├── index.html
-│   │   └── vite.config.js
-│   └── mobile/              # Expo React Native app (Android + iOS)
-│       ├── app.json
-│       ├── App.tsx
-│       ├── context/
-│       │   └── AlertContext.tsx
-│       ├── assets/
-│       └── screens/
-│           ├── FeedScreen.tsx
-│           └── SettingsScreen.tsx
+│   └── web/                 # React + Vite web app
+│       ├── public/
+│       │   ├── sw.js        # Service worker for Web Push
+│       │   ├── icon.png
+│       │   └── badge.png
+│       ├── src/
+│       │   ├── App.jsx
+│       │   ├── App.css
+│       │   └── main.jsx
+│       ├── index.html
+│       └── vite.config.js
 ├── caddy/
 │   └── Caddyfile
 ├── scripts/
@@ -49,13 +40,40 @@ DigitalOcean Droplet
 Cloudflare DNS → lalutir.com
 ├── /api/*  → FastAPI backend
 └── /       → React web frontend (static build)
-
-Mobile app (Expo)
-├── WebSocket → wss://lalutir.com/api/ws
-└── Push      → Expo Push API → device
 ```
 
-The server keeps the last 50 alerts in memory. Clients keep the last 50 in localStorage / AsyncStorage. No database is used.
+The server keeps the last 50 alerts in memory. Clients keep the last 50 in localStorage. No database is used.
+
+---
+
+## Local development
+
+You need two terminals.
+
+**Terminal 1 — backend:**
+
+```bash
+cd backend
+python -m venv venv
+
+# Windows
+venv\Scripts\activate
+# macOS/Linux
+source venv/bin/activate
+
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+```
+
+**Terminal 2 — frontend:**
+
+```bash
+cd frontend/web
+npm install
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173). The Vite dev server proxies all `/api/*` requests (including WebSocket) to `http://localhost:8000`, so both services work together automatically.
 
 ---
 
@@ -87,7 +105,7 @@ The setup script will:
 
 **TLS certificates:** Caddy automatically obtains and renews certificates from Let's Encrypt — no manual SSL steps needed. Ports 80 and 443 must be open on the Droplet.
 
-**Cloudflare proxy (orange cloud):** Set SSL/TLS mode to **Full (strict)** in the Cloudflare dashboard (SSL/TLS → Overview). Caddy still gets a certificate from Let's Encrypt; Cloudflare validates it at the origin.
+**Cloudflare proxy (orange cloud):** Set SSL/TLS mode to **Full (strict)** in the Cloudflare dashboard (SSL/TLS → Overview).
 
 ---
 
@@ -118,7 +136,13 @@ Valid values (seconds): `30, 60, 120, 300, 600, 1200, 1800, 2700, 3600`
 
 **Option 2 — live, from the app:**
 
-The web app interval dropdown and the mobile app settings screen both send `{"type":"set_interval","seconds":N}` over the WebSocket. This takes effect immediately but resets to the service file value on restart.
+Use the interval dropdown in the header. This takes effect immediately but resets to the service file value on restart.
+
+---
+
+## Push notifications
+
+Click the 🔔 button in the header to enable browser push notifications. The button only appears if your browser supports it and you haven't already been asked. Notifications are sent via the Web Push standard (VAPID).
 
 ---
 
@@ -127,29 +151,6 @@ The web app interval dropdown and the mobile app settings screen both send `{"ty
 ```bash
 sudo journalctl -u p2000 -f        # live backend logs
 sudo journalctl -u caddy -f        # Caddy logs
-```
-
----
-
-## Mobile app
-
-**Development:**
-
-```bash
-cd frontend/mobile
-npm install
-npx expo start
-# Scan the QR code with the Expo Go app on your device
-```
-
-**Before building for production**, replace `YOUR-PROJECT-ID-HERE` in `App.tsx` with your actual Expo project ID from [expo.dev](https://expo.dev).
-
-**Production build (EAS):**
-
-```bash
-npm install -g eas-cli
-eas login
-eas build --platform android   # or ios
 ```
 
 ---

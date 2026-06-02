@@ -10,7 +10,6 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import httpx
 import requests
 from bs4 import BeautifulSoup
 from cryptography.hazmat.backends import default_backend
@@ -44,7 +43,6 @@ alert_buffer: collections.deque = collections.deque(maxlen=50)
 seen_ids: set = set()
 connected_clients: list[WebSocket] = []
 web_push_subscriptions: list[dict] = []
-expo_tokens: list[str] = []
 vapid_public_key_b64: str = ""
 
 # --- VAPID key management ---
@@ -149,20 +147,6 @@ async def _send_web_push(alert: dict) -> None:
         web_push_subscriptions.remove(s)
 
 
-async def _send_expo_push(alert: dict) -> None:
-    if not expo_tokens:
-        return
-    payload = [
-        {"to": token, "title": f"{alert['emoji']} Nieuwe Melding", "body": alert["message"], "sound": "default"}
-        for token in expo_tokens
-    ]
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            await client.post("https://exp.host/--/api/v2/push/send", json=payload)
-    except Exception as e:
-        logger.error(f"Expo push failed: {e}")
-
-
 # --- WebSocket broadcast ---
 async def _broadcast(alert: dict) -> None:
     dead = []
@@ -200,7 +184,6 @@ async def _scraper_loop() -> None:
             logger.info(f"New alert: {alert['service']} – {alert['message'][:60]}")
             await _broadcast(alert)
             await _send_web_push(alert)
-            await _send_expo_push(alert)
 
         await asyncio.sleep(scrape_interval)
 
@@ -267,24 +250,6 @@ async def subscribe(sub: _WebPushSub):
 async def unsubscribe(sub: _WebPushSub):
     global web_push_subscriptions
     web_push_subscriptions[:] = [s for s in web_push_subscriptions if s["endpoint"] != sub.endpoint]
-    return {"ok": True}
-
-
-class _ExpoToken(BaseModel):
-    token: str
-
-
-@app.post("/api/subscribe-expo")
-async def subscribe_expo(body: _ExpoToken):
-    if body.token not in expo_tokens:
-        expo_tokens.append(body.token)
-    return {"ok": True}
-
-
-@app.post("/api/unsubscribe-expo")
-async def unsubscribe_expo(body: _ExpoToken):
-    if body.token in expo_tokens:
-        expo_tokens.remove(body.token)
     return {"ok": True}
 
 
