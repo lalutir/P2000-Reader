@@ -1,4 +1,4 @@
-lalutir.com, www.lalutir.com {
+p2000.lalutir.com {
     # Proxy API and WebSocket to FastAPI (must come before file_server)
     handle /api/* {
         reverse_proxy localhost:8000 {
