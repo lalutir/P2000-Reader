@@ -16,16 +16,17 @@ fi
 
 cd "$BASE_DIR"
 
-# Run deploy script (handles venv, frontend build, caddy, systemd)
-bash scripts/deploy.sh
-
 # Allow the deploy script to run sudo commands without a password prompt.
 # This is needed so `push.sh` can deploy non-interactively over SSH.
+# Do this BEFORE running deploy.sh so it takes effect immediately.
 SUDOERS_LINE="lalutir ALL=(ALL) NOPASSWD: /bin/cp, /usr/bin/systemctl, /bin/systemctl"
 SUDOERS_FILE="/etc/sudoers.d/p2000-deploy"
 echo "$SUDOERS_LINE" | sudo tee "$SUDOERS_FILE" > /dev/null
 sudo chmod 0440 "$SUDOERS_FILE"
 echo "Sudoers rule written to $SUDOERS_FILE"
+
+# Run deploy script (handles venv, frontend build, caddy, systemd)
+bash scripts/deploy.sh
 
 echo ""
 echo "Setup complete."

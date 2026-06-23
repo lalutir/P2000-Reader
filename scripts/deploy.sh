@@ -17,10 +17,11 @@ npm install
 npm run build
 cd "$BASE_DIR"
 
-# Caddy: update config and reload
+# Caddy: update config and restart (restart works whether caddy is running or not)
 sudo cp caddy/Caddyfile /etc/caddy/Caddyfile
 caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl reload caddy
+sudo systemctl enable caddy
+sudo systemctl restart caddy
 
 # Systemd: install and restart service
 sudo cp backend/p2000.service /etc/systemd/system/p2000.service
