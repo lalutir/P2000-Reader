@@ -1,5 +1,5 @@
 p2000.lalutir.com {
-    # Proxy API and WebSocket to FastAPI (must come before file_server)
+    # Proxy API and WebSocket to FastAPI
     handle /api/* {
         reverse_proxy localhost:8000 {
             header_up Host {host}
@@ -7,10 +7,10 @@ p2000.lalutir.com {
         }
     }
 
-    # Serve the React web frontend
-    root * /home/lalutir/p2000-reader/frontend/web/dist
-    file_server
-
-    # SPA fallback — send unknown paths to index.html
-    try_files {path} /index.html
+    # Serve the React SPA for everything else
+    handle {
+        root * /home/lalutir/p2000-reader/frontend/web/dist
+        try_files {path} /index.html
+        file_server
+    }
 }
