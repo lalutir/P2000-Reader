@@ -25,6 +25,9 @@ echo "$SUDOERS_LINE" | sudo tee "$SUDOERS_FILE" > /dev/null
 sudo chmod 0440 "$SUDOERS_FILE"
 echo "Sudoers rule written to $SUDOERS_FILE"
 
+# Create conf.d directory for per-site Caddy snippets
+sudo mkdir -p /etc/caddy/conf.d
+
 # Run deploy script (handles venv, frontend build, caddy, systemd)
 bash scripts/deploy.sh
 

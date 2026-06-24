@@ -1,0 +1,14 @@
+p2000.lalutir.com {
+    handle /api/* {
+        reverse_proxy localhost:8000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    handle {
+        root * /home/lalutir/p2000-reader/frontend/web/dist
+        try_files {path} /index.html
+        file_server
+    }
+}
