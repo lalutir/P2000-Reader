@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 
 const IS_DEV = import.meta.env.DEV
 const WS_URL = IS_DEV
@@ -74,9 +74,41 @@ export default function App() {
     if (!('Notification' in window)) return 'unsupported'
     return Notification.permission // 'default' | 'granted' | 'denied'
   })
+  const [selectedRegion, setSelectedRegion] = useState('')
+  const [selectedCity, setSelectedCity] = useState('')
   const wsRef = useRef(null)
   const delayRef = useRef(1000)
   const timerRef = useRef(null)
+
+  // Build region → [city] map from received alerts
+  const regionMap = useMemo(() => {
+    const map = {}
+    alerts.forEach(a => {
+      if (!a.region) return
+      if (!map[a.region]) map[a.region] = new Set()
+      if (a.city) map[a.region].add(a.city)
+    })
+    return map
+  }, [alerts])
+
+  const regions = useMemo(() => Object.keys(regionMap).sort(), [regionMap])
+
+  const citiesForRegion = useMemo(() => {
+    if (!selectedRegion || !regionMap[selectedRegion]) return []
+    return [...regionMap[selectedRegion]].sort()
+  }, [regionMap, selectedRegion])
+
+  // Only filter when the typed value exactly matches a known option
+  const filteredAlerts = useMemo(() => {
+    const regionActive = selectedRegion && regions.includes(selectedRegion)
+    const cityActive = selectedCity && citiesForRegion.includes(selectedCity)
+    if (!regionActive && !cityActive) return alerts
+    return alerts.filter(a => {
+      if (regionActive && a.region !== selectedRegion) return false
+      if (cityActive && a.city !== selectedCity) return false
+      return true
+    })
+  }, [alerts, selectedRegion, selectedCity, regions, citiesForRegion])
 
   const persist = useCallback((list) => {
     setAlerts(list)
@@ -143,43 +175,109 @@ export default function App() {
     }
   }
 
+  async function updatePushFilter(region, city) {
+    if (notifState !== 'granted' || !('serviceWorker' in navigator)) return
+    try {
+      const reg = await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.getSubscription()
+      if (!sub) return
+      await fetch(`${API_BASE}/api/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...sub.toJSON(), filter_region: region, filter_city: city }),
+      })
+    } catch (e) {
+      console.error('Push filter update failed:', e)
+    }
+  }
+
+  function handleRegionChange(value) {
+    setSelectedRegion(value)
+    setSelectedCity('')
+    updatePushFilter(value, '')
+  }
+
+  function handleCityChange(value) {
+    setSelectedCity(value)
+    updatePushFilter(selectedRegion, value)
+  }
+
   const showNotifButton = notifState === 'default' && 'serviceWorker' in navigator
 
   return (
     <div className="app">
       <header className="header">
-        <h1>P2000 Reader</h1>
-        <div className="header-right">
-          <div className={`status ${connected ? 'connected' : 'disconnected'}`}>
-            <span className="dot" />
-            {connected ? 'Live' : 'Verbroken – opnieuw verbinden…'}
-          </div>
-          <select
-            className="interval-select"
-            value={interval}
-            onChange={e => handleInterval(Number(e.target.value))}
-          >
-            {INTERVAL_OPTIONS.map(o => (
-              <option key={o.seconds} value={o.seconds}>{o.label}</option>
-            ))}
-          </select>
-          {showNotifButton && (
-            <button
-              className="notif-btn"
-              onClick={enableNotifications}
-              title="Schakel pushmeldingen in"
+        <div className="header-top">
+          <h1>P2000 Reader</h1>
+          <div className="header-right">
+            <div className={`status ${connected ? 'connected' : 'disconnected'}`}>
+              <span className="dot" />
+              {connected ? 'Live' : 'Verbroken – opnieuw verbinden…'}
+            </div>
+            <select
+              className="interval-select"
+              value={interval}
+              onChange={e => handleInterval(Number(e.target.value))}
             >
-              🔔
-            </button>
-          )}
+              {INTERVAL_OPTIONS.map(o => (
+                <option key={o.seconds} value={o.seconds}>{o.label}</option>
+              ))}
+            </select>
+            {showNotifButton && (
+              <button
+                className="notif-btn"
+                onClick={enableNotifications}
+                title="Schakel pushmeldingen in"
+              >
+                🔔
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="header-filters">
+          <div className="filter-wrapper">
+            <input
+              list="regions-list"
+              className="filter-input"
+              value={selectedRegion}
+              onChange={e => handleRegionChange(e.target.value)}
+              placeholder="Alle veiligheidsregio's"
+            />
+            <datalist id="regions-list">
+              {regions.map(r => <option key={r} value={r} />)}
+            </datalist>
+            {selectedRegion && (
+              <button className="filter-clear" onClick={() => handleRegionChange('')} title="Wis regio">×</button>
+            )}
+          </div>
+
+          <div className="filter-wrapper">
+            <input
+              list="cities-list"
+              className="filter-input"
+              value={selectedCity}
+              onChange={e => handleCityChange(e.target.value)}
+              placeholder={selectedRegion ? 'Alle steden' : 'Selecteer eerst een regio'}
+              disabled={!selectedRegion}
+            />
+            <datalist id="cities-list">
+              {citiesForRegion.map(c => <option key={c} value={c} />)}
+            </datalist>
+            {selectedCity && (
+              <button className="filter-clear" onClick={() => handleCityChange('')} title="Wis stad">×</button>
+            )}
+          </div>
         </div>
       </header>
 
       <main className="alert-list">
-        {alerts.length === 0 && (
-          <div className="empty">Geen meldingen ontvangen</div>
+        {filteredAlerts.length === 0 && (
+          <div className="empty">
+            {alerts.length === 0 ? 'Geen meldingen ontvangen' : 'Geen meldingen voor deze filter'}
+          </div>
         )}
-        {alerts.map(alert => (
+        {filteredAlerts.map(alert => (
           <div
             key={alert.id}
             className="alert-card"

@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import signal
 import sys
 from contextlib import asynccontextmanager
@@ -39,6 +40,41 @@ P2000_URL = "http://www.p2000-online.net/p2000.py"
 
 EMOJI_MAP = {"Brandweer": "🚒", "Ambulance": "🚑", "Politie": "🚔"}
 SERVICE_CLASS_MAP = {"Br": "Brandweer", "Am": "Ambulance", "Po": "Politie"}
+
+# Known abbreviations used in P2000 messages → canonical city names
+_CITY_ABBREVS: dict[str, str] = {
+    "RTTDM": "Rotterdam",
+    "A'DAM": "Amsterdam",
+    "ADAM": "Amsterdam",
+    "'S-GRAVENHAGE": "Den Haag",
+    "S-GRAVENHAGE": "Den Haag",
+    "'S-HERTOGENBOSCH": "'s-Hertogenbosch",
+    "S-HERTOGENBOSCH": "'s-Hertogenbosch",
+}
+
+# Postal code followed by city: "1234 AB Cityname"
+_RE_POSTAL = re.compile(
+    r'\b\d{4}\s?[A-Z]{2}\b\s+([A-Za-z][A-Za-z\s\'\-\.]{1,39}?)(?:\s+[A-Z][A-Z0-9\-]{1,9})?$'
+)
+# City after last comma (with optional postal code): ", [1234 AB] Cityname"
+_RE_COMMA = re.compile(
+    r',\s*(?:\d{4}\s?[A-Z]{2}\s+)?([A-Za-z][A-Za-z\s\'\-\.]{1,39}?)(?:\s+[A-Z][A-Z0-9\-]{1,9})?$'
+)
+
+
+def _extract_city(message: str) -> str:
+    """Best-effort extraction of city name from a P2000 alert message."""
+    msg = " ".join(message.split())
+    for pattern in (_RE_POSTAL, _RE_COMMA):
+        m = pattern.search(msg)
+        if m:
+            city = m.group(1).strip()
+            # Sanity check: should not contain digits (it's a name, not an address)
+            if re.search(r'\d', city):
+                continue
+            upper = city.upper()
+            return _CITY_ABBREVS.get(upper, city.title())
+    return ""
 
 # --- State ---
 alert_buffer: collections.deque = collections.deque(maxlen=50)
@@ -122,6 +158,7 @@ def scrape_alerts() -> list[dict]:
                 "datetime": datetime_str,
                 "service": service,
                 "region": rgn_cell.text.strip(),
+                "city": _extract_city(message),
                 "message": message,
                 "emoji": EMOJI_MAP.get(service, "🚨"),
             })
@@ -140,6 +177,10 @@ async def _send_web_push(alert: dict) -> None:
     data = json.dumps({"title": f"{alert['emoji']} {alert['service']}", "body": alert["message"]})
     dead = []
     for sub in list(web_push_subscriptions):
+        if sub.get("filter_region") and sub["filter_region"] != alert.get("region", ""):
+            continue
+        if sub.get("filter_city") and sub["filter_city"] != alert.get("city", ""):
+            continue
         try:
             parsed = urlparse(sub["endpoint"])
             aud = f"{parsed.scheme}://{parsed.netloc}"
@@ -245,6 +286,21 @@ async def get_alerts():
     return list(alert_buffer)
 
 
+@app.get("/api/filters")
+async def get_filters():
+    """Return {region: [city, ...]} derived from the current alert buffer."""
+    regions: dict[str, set] = {}
+    for alert in alert_buffer:
+        region = alert.get("region", "")
+        city = alert.get("city", "")
+        if region:
+            if region not in regions:
+                regions[region] = set()
+            if city:
+                regions[region].add(city)
+    return {r: sorted(cities) for r, cities in sorted(regions.items())}
+
+
 @app.get("/api/vapid-public-key")
 async def get_vapid_key():
     return {"publicKey": vapid_public_key_b64}
@@ -253,14 +309,19 @@ async def get_vapid_key():
 class _WebPushSub(BaseModel):
     endpoint: str
     keys: dict
+    filter_region: str = ""
+    filter_city: str = ""
 
 
 @app.post("/api/subscribe")
 async def subscribe(sub: _WebPushSub):
     d = sub.model_dump()
-    if not any(s["endpoint"] == sub.endpoint for s in web_push_subscriptions):
+    idx = next((i for i, s in enumerate(web_push_subscriptions) if s["endpoint"] == sub.endpoint), None)
+    if idx is not None:
+        web_push_subscriptions[idx] = d  # update filter preferences for existing sub
+    else:
         web_push_subscriptions.append(d)
-        _save_subscriptions()
+    _save_subscriptions()
     return {"ok": True}
 
 
