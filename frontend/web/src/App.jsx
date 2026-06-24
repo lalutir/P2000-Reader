@@ -1,5 +1,67 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 
+// All 342 Dutch municipalities grouped by their Veiligheidsregio.
+// Region names must match the `region` field in P2000 alert data exactly (case-insensitive fallback below).
+const MUNICIPALITIES = {
+  "Amsterdam-Amstelland": ["Aalsmeer","Amstelveen","Amsterdam","Diemen","Ouder-Amstel","Uithoorn"],
+  "Brabant-Noord": ["Bernheze","Boekel","Boxtel","'s-Hertogenbosch","Heusden","Land van Cuijk","Laarbeek","Maashorst","Meierijstad","Sint-Michielsgestel","Vught"],
+  "Brabant-Zuidoost": ["Asten","Bergeijk","Best","Bladel","Cranendonck","Deurne","Eersel","Eindhoven","Geldrop-Mierlo","Gemert-Bakel","Heeze-Leende","Helmond","Nuenen","Oirschot","Reusel-De Mierden","Someren","Son en Breugel","Valkenswaard","Veldhoven","Waalre"],
+  "Drenthe": ["Aa en Hunze","Assen","Borger-Odoorn","Coevorden","De Wolden","Emmen","Hoogeveen","Meppel","Midden-Drenthe","Noordenveld","Tynaarlo","Westerveld"],
+  "Flevoland": ["Almere","Dronten","Lelystad","Noordoostpolder","Urk","Zeewolde"],
+  "Friesland": ["Achtkarspelen","Ameland","De Friese Meren","Harlingen","Leeuwarden","Noardeast-Fryslân","Opsterland","Schiermonnikoog","Smallingerland","Súdwest-Fryslân","Terschelling","Tytsjerksteradiel","Vlieland","Waadhoeke"],
+  "Fryslân": ["Achtkarspelen","Ameland","De Friese Meren","Harlingen","Leeuwarden","Noardeast-Fryslân","Opsterland","Schiermonnikoog","Smallingerland","Súdwest-Fryslân","Terschelling","Tytsjerksteradiel","Vlieland","Waadhoeke"],
+  "Gelderland-Midden": ["Arnhem","Doesburg","Duiven","Lingewaard","Overbetuwe","Rheden","Rozendaal","Westervoort","Zevenaar"],
+  "Gelderland-Zuid": ["Berg en Dal","Beuningen","Buren","Culemborg","Druten","Heumen","Maasdriel","Neder-Betuwe","Nijmegen","Tiel","West Betuwe","West Maas en Waal","Wijchen","Zaltbommel"],
+  "Gooi en Vechtstreek": ["Blaricum","Gooise Meren","Hilversum","Huizen","Laren","Weesp","Wijdemeren"],
+  "Groningen": ["Eemsdelta","Groningen","Het Hogeland","Midden-Groningen","Oldambt","Pekela","Stadskanaal","Veendam","Westerkwartier","Westerwolde"],
+  "Haaglanden": ["Delft","Den Haag","Leidschendam-Voorburg","Midden-Delfland","Pijnacker-Nootdorp","Rijswijk","Wassenaar","Westland","Zoetermeer"],
+  "Hollands Midden": ["Alphen aan den Rijn","Bodegraven-Reeuwijk","Gouda","Hillegom","Kaag en Braassem","Katwijk","Krimpenerwaard","Leiden","Leiderdorp","Lisse","Nieuwkoop","Noordwijk","Oegstgeest","Teylingen","Voorschoten","Waddinxveen","Zoeterwoude","Zuidplas"],
+  "IJsselland": ["Dalfsen","Deventer","Hardenberg","Kampen","Olst-Wijhe","Ommen","Raalte","Staphorst","Steenwijkerland","Zwartewaterland","Zwolle"],
+  "Kennemerland": ["Beverwijk","Bloemendaal","Castricum","Haarlem","Haarlemmermeer","Heemskerk","Heemstede","Uitgeest","Velsen","Zandvoort"],
+  "Limburg-Noord": ["Beesel","Bergen","Echt-Susteren","Gennep","Horst aan de Maas","Leudal","Maasgouw","Mook en Middelaar","Nederweert","Peel en Maas","Roerdalen","Roermond","Venlo","Venray","Weert"],
+  "Limburg-Zuid": ["Beekdaelen","Brunssum","Eijsden-Margraten","Gulpen-Wittem","Heerlen","Kerkrade","Landgraaf","Maastricht","Meerssen","Simpelveld","Sittard-Geleen","Stein","Vaals","Valkenburg aan de Geul","Voerendaal"],
+  "Zuid-Limburg": ["Beekdaelen","Brunssum","Eijsden-Margraten","Gulpen-Wittem","Heerlen","Kerkrade","Landgraaf","Maastricht","Meerssen","Simpelveld","Sittard-Geleen","Stein","Vaals","Valkenburg aan de Geul","Voerendaal"],
+  "Midden- en West Brabant": ["Alphen-Chaam","Altena","Baarle-Nassau","Bergen op Zoom","Breda","Dongen","Drimmelen","Etten-Leur","Geertruidenberg","Goirle","Halderberge","Hilvarenbeek","Loon op Zand","Moerdijk","Oosterhout","Roosendaal","Rucphen","Steenbergen","Tilburg","Waalwijk","Woensdrecht","Zundert"],
+  "Noord- en Oost Gelderland": ["Aalten","Apeldoorn","Berkelland","Bronckhorst","Brummen","Doetinchem","Elburg","Epe","Ermelo","Harderwijk","Hattem","Heerde","Lochem","Montferland","Nunspeet","Oldebroek","Oost Gelre","Oude IJsselstreek","Putten","Voorst","Winterswijk","Zutphen"],
+  "Noord-Holland-Noord": ["Alkmaar","Bergen","Den Helder","Dijk en Waard","Enkhuizen","Hollands Kroon","Hoorn","Koggenland","Medemblik","Opmeer","Schagen","Stede Broec","Texel"],
+  "Rotterdam-Rijnmond": ["Albrandswaard","Barendrecht","Brielle","Capelle aan den IJssel","Goeree-Overflakkee","Krimpen aan den IJssel","Lansingerland","Maassluis","Nissewaard","Ridderkerk","Rotterdam","Schiedam","Vlaardingen","Westvoorne"],
+  "Twente": ["Almelo","Borne","Dinkelland","Enschede","Haaksbergen","Hellendoorn","Hengelo","Hof van Twente","Losser","Oldenzaal","Rijssen-Holten","Tubbergen","Twenterand","Wierden"],
+  "Utrecht": ["Amersfoort","Baarn","Bunnick","Bunschoten","De Bilt","De Ronde Venen","Houten","IJsselstein","Lopik","Montfoort","Nieuwegein","Oudewater","Renswoude","Rhenen","Soest","Stichtse Vecht","Utrechtse Heuvelrug","Utrecht","Veenendaal","Vijfheerenlanden","Wijk bij Duurstede","Woerden","Zeist"],
+  "Zaanstreek-Waterland": ["Edam-Volendam","Landsmeer","Purmerend","Waterland","Wormerland","Zaanstad"],
+  "Zeeland": ["Borsele","Goes","Hulst","Kapelle","Middelburg","Noord-Beveland","Reimerswaal","Schouwen-Duiveland","Sluis","Terneuzen","Tholen","Vlissingen"],
+  "Zuid-Holland-Zuid": ["Alblasserdam","Dordrecht","Gorinchem","Hardinxveld-Giessendam","Hendrik-Ido-Ambacht","Hoeksche Waard","Molenlanden","Papendrecht","Sliedrecht","Zwijndrecht"],
+}
+
+// Known P2000 CAD abbreviations per municipality.
+// When filtering for e.g. "Den Haag", messages containing "SGRAVH" also match.
+const CITY_ALIASES = {
+  "Den Haag":           ["SGRAVH","S-GRAVENHAGE","Gravenhage"],
+  "'s-Hertogenbosch":   ["DEN BOSCH","Den Bosch","S-HERTOGENBOSCH","HERTOGENBOSCH"],
+  "Rotterdam":          ["RTTDM"],
+  "Amsterdam":          ["ADAM","A'DAM"],
+  "Schiedam":           ["SCHIDM"],
+  "Waddinxveen":        ["WADDXV"],
+  "Leeuwarden":         ["LWD"],
+}
+
+// Lookup municipalities for a region name (case-insensitive fallback).
+function getMunicipalities(region) {
+  if (!region) return []
+  if (MUNICIPALITIES[region]) return [...MUNICIPALITIES[region]].sort()
+  const key = Object.keys(MUNICIPALITIES).find(k => k.toLowerCase() === region.toLowerCase())
+  return key ? [...MUNICIPALITIES[key]].sort() : []
+}
+
+// Word-boundary-aware check: does the alert message mention this municipality?
+// Uses lookbehind/lookahead so special chars in names (apostrophes, hyphens) work.
+function cityMatchesAlert(city, message) {
+  const terms = [city, ...(CITY_ALIASES[city] || [])]
+  return terms.some(term => {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return new RegExp(`(?<![\\w])${escaped}(?![\\w])`, 'i').test(message)
+  })
+}
+
 const IS_DEV = import.meta.env.DEV
 const WS_URL = IS_DEV
   ? 'ws://127.0.0.1:8000/api/ws'
@@ -80,32 +142,24 @@ export default function App() {
   const delayRef = useRef(1000)
   const timerRef = useRef(null)
 
-  // Build region → [city] map from received alerts
-  const regionMap = useMemo(() => {
-    const map = {}
-    alerts.forEach(a => {
-      if (!a.region) return
-      if (!map[a.region]) map[a.region] = new Set()
-      if (a.city) map[a.region].add(a.city)
-    })
-    return map
+  // Regions seen in live alerts (dynamic — shows only what's been received)
+  const regions = useMemo(() => {
+    const r = new Set()
+    alerts.forEach(a => { if (a.region) r.add(a.region) })
+    return [...r].sort()
   }, [alerts])
 
-  const regions = useMemo(() => Object.keys(regionMap).sort(), [regionMap])
+  // Municipalities for the selected region come from the static list
+  const citiesForRegion = useMemo(() => getMunicipalities(selectedRegion), [selectedRegion])
 
-  const citiesForRegion = useMemo(() => {
-    if (!selectedRegion || !regionMap[selectedRegion]) return []
-    return [...regionMap[selectedRegion]].sort()
-  }, [regionMap, selectedRegion])
-
-  // Only filter when the typed value exactly matches a known option
+  // Filter only when the typed value exactly matches a known option
   const filteredAlerts = useMemo(() => {
     const regionActive = selectedRegion && regions.includes(selectedRegion)
     const cityActive = selectedCity && citiesForRegion.includes(selectedCity)
     if (!regionActive && !cityActive) return alerts
     return alerts.filter(a => {
       if (regionActive && a.region !== selectedRegion) return false
-      if (cityActive && a.city !== selectedCity) return false
+      if (cityActive && !cityMatchesAlert(selectedCity, a.message)) return false
       return true
     })
   }, [alerts, selectedRegion, selectedCity, regions, citiesForRegion])
@@ -175,7 +229,7 @@ export default function App() {
     }
   }
 
-  async function updatePushFilter(region, city) {
+  async function updatePushRegion(region) {
     if (notifState !== 'granted' || !('serviceWorker' in navigator)) return
     try {
       const reg = await navigator.serviceWorker.ready
@@ -184,7 +238,7 @@ export default function App() {
       await fetch(`${API_BASE}/api/subscribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...sub.toJSON(), filter_region: region, filter_city: city }),
+        body: JSON.stringify({ ...sub.toJSON(), filter_region: region }),
       })
     } catch (e) {
       console.error('Push filter update failed:', e)
@@ -194,12 +248,11 @@ export default function App() {
   function handleRegionChange(value) {
     setSelectedRegion(value)
     setSelectedCity('')
-    updatePushFilter(value, '')
+    updatePushRegion(value)
   }
 
   function handleCityChange(value) {
     setSelectedCity(value)
-    updatePushFilter(selectedRegion, value)
   }
 
   const showNotifButton = notifState === 'default' && 'serviceWorker' in navigator
