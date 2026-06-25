@@ -62,6 +62,150 @@ function cityMatchesAlert(city, message) {
   })
 }
 
+// Lowercase set of all known place names — used to stop the backwards prefix walk.
+const PLACE_NAMES_LOWER = new Set([
+  ...Object.values(MUNICIPALITIES).flat(),
+  ...Object.keys(CITY_ALIASES),
+  ...Object.values(CITY_ALIASES).flat(),
+].map(n => n.toLowerCase()))
+
+// Articles that *begin* a street name ("de Ruyterstraat").
+// When encountered walking backwards, include the article and STOP — never look
+// further back, so description words like "Letsel" before the article are not captured.
+const DUTCH_ARTICLE = new Set(['de', 'het', "'t"])
+// Connectors that appear *between* a proper name and the suffix ("Rogier van der Weijdenstraat").
+// When encountered, include and keep walking back to find the proper-name word.
+const DUTCH_CONNECTOR = new Set(['van', 'den', 'der', 'ter', 'ten'])
+
+// Core: suffix-ending word + house number (\b rejects postal codes like "3067DD").
+const STREET_CORE_RE = /\b\w+(?:straat|laan|weg|plein|kade|gracht|singel|boulevard|dijk|pad|hof|dreef|allee|steeg|markt|ring|baan|dam|poort|haven|veld)\b(?:\s+\d{1,5}[a-zA-Z]?\b)?/i
+
+// Descriptive suffixes that mark a word as a service/medical term, not a street-name part.
+const DESC_ENDS = ['ologie', 'atie', 'ering', 'heid', 'teit', 'iteit']
+
+// True when a word looks like a proper-name part of a street:
+// all-alpha (rejects call codes like "B2"), no descriptive suffix (rejects "Neurologie").
+function looksLikeStreetPrefix(word) {
+  if (!/^[A-Za-zÀ-ÿ]+$/.test(word)) return false
+  const lower = word.toLowerCase()
+  return !DESC_ENDS.some(s => lower.endsWith(s))
+}
+
+// Find the street name in one slash-delimited segment.
+// Returns { streetText, coreEnd } — coreEnd is used by the caller for intersection detection.
+//
+// Backward walk rules (right-to-left over the words before the core match):
+//   DUTCH_ARTICLE   → include + stop   ("de" in "de Ruyterstraat": stop, skip "Letsel")
+//   DUTCH_CONNECTOR → include + continue ("van der" in "Rogier van der Weijdenstraat")
+//   Capital proper name (all-alpha, no desc suffix) → include + stop after 1 such word
+//   Place name / call code / descriptive word → stop without including
+// After the loop: also pull in a connector sitting directly before the collected name word
+// (handles "Van" in "Van Limburg Styrumstraat").
+function findStreetInSegment(segment) {
+  const m = STREET_CORE_RE.exec(segment)
+  if (!m) return null
+
+  const coreEnd = m.index + m[0].length
+  const before = segment.slice(0, m.index).trimEnd()
+  const words = before ? before.split(/\s+/) : []
+  const prefix = []
+  let nonPrepCount = 0
+  let stopIdx = -1
+  let articleCollected = false
+
+  for (let i = words.length - 1; i >= 0; i--) {
+    const w = words[i]
+    if (!w) continue
+    const lower = w.toLowerCase()
+    if (PLACE_NAMES_LOWER.has(lower)) break
+    if (DUTCH_ARTICLE.has(lower)) { prefix.unshift(w); articleCollected = true; break }
+    if (DUTCH_CONNECTOR.has(lower)) { prefix.unshift(w); continue }
+    if (!/^[A-ZÀ-Ö]/.test(w) || !looksLikeStreetPrefix(w)) break
+    prefix.unshift(w)
+    nonPrepCount++
+    stopIdx = i
+    if (nonPrepCount >= 1) break
+  }
+
+  // Pull in a connector directly before the collected proper-name word.
+  if (stopIdx > 0 && nonPrepCount > 0) {
+    const prev = words[stopIdx - 1]
+    if (prev && DUTCH_CONNECTOR.has(prev.toLowerCase())) prefix.unshift(prev)
+  }
+
+  // Discard if only connectors collected — no article and no proper name.
+  if (nonPrepCount === 0 && !articleCollected) prefix.length = 0
+
+  const streetText = (prefix.length ? prefix.join(' ') + ' ' : '') + m[0].trim()
+  return { streetText, coreEnd }
+}
+
+// Fallback: find the first known municipality in the message (canonical name, not alias).
+// Used when no slash-separated city segment follows the street segment.
+function extractCityFromMessage(message) {
+  const allCities = Object.values(MUNICIPALITIES).flat()
+  for (const city of allCities) {
+    const terms = [city, ...(CITY_ALIASES[city] || [])]
+    const found = terms.some(term => {
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      return new RegExp(`(?<![\\w])${escaped}(?![\\w])`, 'i').test(message)
+    })
+    if (found) return city
+  }
+  return null
+}
+
+// Wrap the first detected street name in a Google Maps search link.
+// Splits on '/' to isolate street segments; uses the following segment as city.
+// Intersection detection: if a second street suffix appears within 25 chars after the first,
+// the Maps query uses "street1 & street2" — matching Dutch P2000 corner/hoek addresses.
+function renderMessage(message) {
+  const segments = message.split('/')
+  let streetText = null
+  let city = null
+  let coreEnd = 0
+  let activeSegment = null
+
+  for (let i = 0; i < segments.length; i++) {
+    const result = findStreetInSegment(segments[i])
+    if (!result) continue
+    streetText = result.streetText
+    coreEnd = result.coreEnd
+    activeSegment = segments[i]
+    if (i + 1 < segments.length) {
+      const candidate = segments[i + 1].trim()
+      if (candidate.length >= 2 && candidate.length <= 60) city = candidate
+    }
+    break
+  }
+
+  if (!streetText) return message
+  if (!city) city = extractCityFromMessage(message)
+
+  // Detect intersection: second street suffix within 25 chars after the first.
+  let locationQuery = streetText
+  if (activeSegment) {
+    const afterFirst = activeSegment.slice(coreEnd)
+    const m2 = STREET_CORE_RE.exec(afterFirst)
+    if (m2 && m2.index <= 25) locationQuery = `${streetText} & ${m2[0].trim()}`
+  }
+
+  const query = city ? `${locationQuery}, ${city}, Nederland` : `${locationQuery}, Nederland`
+  const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
+  const idx = message.indexOf(streetText)
+  if (idx === -1) return message
+
+  return (
+    <>
+      {message.slice(0, idx)}
+      <a href={url} target="_blank" rel="noopener noreferrer" className="street-link">
+        {streetText}
+      </a>
+      {message.slice(idx + streetText.length)}
+    </>
+  )
+}
+
 const IS_DEV = import.meta.env.DEV
 const WS_URL = IS_DEV
   ? 'ws://127.0.0.1:8000/api/ws'
@@ -343,7 +487,7 @@ export default function App() {
                 <span className="alert-region">{alert.region}</span>
                 <span className="alert-datetime">{alert.datetime}</span>
               </div>
-              <div className="alert-message">{alert.message}</div>
+              <div className="alert-message">{renderMessage(alert.message)}</div>
             </div>
           </div>
         ))}

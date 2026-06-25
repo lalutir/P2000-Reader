@@ -218,6 +218,18 @@ body {
   color: #cbd5e0;
 }
 
+.street-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
+.street-link:hover {
+  text-decoration-style: solid;
+  opacity: 0.8;
+}
+
 .notif-btn {
   background: none;
   border: 1px solid #4a5568;
