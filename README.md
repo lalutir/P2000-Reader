@@ -25,7 +25,8 @@ P2000-Reader/
 ├── caddy/
 │   └── Caddyfile
 ├── scripts/
-│   ├── deploy.sh            # Run after every git pull
+│   ├── deploy.sh            # Run from your laptop: pushes + deploys, no SSH needed
+│   ├── remote-deploy.sh     # Runs on the Droplet: rebuilds and restarts services
 │   └── setup.sh             # First-time setup on a fresh Droplet
 └── README.md
 ```
@@ -111,14 +112,28 @@ The setup script will:
 
 ## Updating
 
-After pushing changes to GitHub, run on the Droplet:
+Run this from your laptop — no manual SSH required:
 
 ```bash
-cd ~/p2000-reader
 bash scripts/deploy.sh
 ```
 
-This pulls the latest code, reinstalls Python deps, rebuilds the frontend, reloads Caddy, and restarts the API service.
+This pushes to GitHub, then SSHes into the Droplet and runs `scripts/remote-deploy.sh`, which pulls the latest code, reinstalls Python deps, rebuilds the frontend, reloads Caddy, and restarts the API service.
+
+**First-time requirement:** your SSH public key must be added to the Droplet's `~/.ssh/authorized_keys` for the `lalutir` user (already done if you followed the setup steps above).
+
+By default it targets `lalutir@142.93.232.87`. Override with environment variables if needed:
+
+```bash
+DROPLET_HOST=<ip-or-hostname> bash scripts/deploy.sh
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `DROPLET_USER` | `lalutir` | SSH username on the Droplet |
+| `DROPLET_HOST` | `142.93.232.87` | Droplet IP address or hostname |
+| `REMOTE_PATH` | `~/p2000-reader` | Path to the repo on the Droplet |
+| `SSH_KEY` | *(none)* | Path to a private key, if not handled by `ssh-agent` |
 
 ---
 

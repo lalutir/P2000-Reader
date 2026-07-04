@@ -1,33 +1,32 @@
 #!/bin/bash
-set -e
+# deploy.sh — Push changes and deploy to the Droplet. Run this from your
+# laptop; it SSHes in and runs the remote steps for you — no manual SSH needed.
+#
+# Usage: bash scripts/deploy.sh
+#
+# Requires: your SSH key added to the Droplet (see README).
+# Override the target by exporting DROPLET_USER / DROPLET_HOST / REMOTE_PATH / SSH_KEY.
 
-BASE_DIR="$HOME/p2000-reader"
-cd "$BASE_DIR"
-git pull
+set -euo pipefail
 
-# Backend: create/update virtualenv and install deps
-python3 -m venv venv
-source venv/bin/activate
-pip install -r backend/requirements.txt
-deactivate
+DROPLET_USER="${DROPLET_USER:-lalutir}"
+DROPLET_HOST="${DROPLET_HOST:-142.93.232.87}"
+REMOTE_PATH="${REMOTE_PATH:-~/p2000-reader}"
+SSH_KEY="${SSH_KEY:-}"
 
-# Web frontend: install and build
-cd "$BASE_DIR/frontend/web"
-npm install
-npm run build
-cd "$BASE_DIR"
+SSH_OPTS=(-o StrictHostKeyChecking=accept-new)
+if [ -n "$SSH_KEY" ]; then
+    SSH_OPTS+=(-i "$SSH_KEY")
+fi
 
-# Caddy: update this site's snippet and reload (never touches the main Caddyfile)
-sudo cp caddy/p2000.caddy /etc/caddy/conf.d/p2000.caddy
-caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl reload caddy
+TARGET="${DROPLET_USER}@${DROPLET_HOST}"
 
-# Systemd: install and restart service
-sudo cp backend/p2000.service /etc/systemd/system/p2000.service
-sudo systemctl daemon-reload
-sudo systemctl enable p2000
-sudo systemctl restart p2000
+echo "==> Pushing to GitHub..."
+git push origin main
 
-echo "Deploy complete."
-echo "API status:"
-sudo systemctl status p2000 --no-pager -l
+echo "==> Deploying on ${TARGET}..."
+# -t allocates a pseudo-TTY so sudo can prompt if NOPASSWD is not yet configured.
+ssh -t "${SSH_OPTS[@]}" "$TARGET" "bash ${REMOTE_PATH}/scripts/remote-deploy.sh"
+
+echo ""
+echo "Done. Site is live at https://p2000.lalutir.com"

@@ -17,8 +17,8 @@ fi
 cd "$BASE_DIR"
 
 # Allow the deploy script to run sudo commands without a password prompt.
-# This is needed so `push.sh` can deploy non-interactively over SSH.
-# Do this BEFORE running deploy.sh so it takes effect immediately.
+# This is needed so `deploy.sh` can deploy non-interactively over SSH.
+# Do this BEFORE running remote-deploy.sh so it takes effect immediately.
 SUDOERS_LINE="lalutir ALL=(ALL) NOPASSWD: /bin/cp, /usr/bin/systemctl, /bin/systemctl"
 SUDOERS_FILE="/etc/sudoers.d/p2000-deploy"
 echo "$SUDOERS_LINE" | sudo tee "$SUDOERS_FILE" > /dev/null
@@ -29,7 +29,7 @@ echo "Sudoers rule written to $SUDOERS_FILE"
 sudo mkdir -p /etc/caddy/conf.d
 
 # Run deploy script (handles venv, frontend build, caddy, systemd)
-bash scripts/deploy.sh
+bash scripts/remote-deploy.sh
 
 echo ""
 echo "Setup complete."
@@ -37,4 +37,4 @@ echo "Caddy will obtain TLS certificates automatically once DNS points to this s
 echo "Check service status: sudo systemctl status p2000"
 echo "View logs: sudo journalctl -u p2000 -f"
 echo ""
-echo "From your laptop you can now deploy with:  bash scripts/push.sh"
+echo "From your laptop you can now deploy with:  bash scripts/deploy.sh"
