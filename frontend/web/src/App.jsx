@@ -227,13 +227,13 @@ const INTERVAL_OPTIONS = [
 ]
 
 const SERVICE_COLORS = {
-  Brandweer: '#e53e3e',
-  Ambulance: '#d69e2e',
-  Politie: '#3182ce',
+  Brandweer: 'var(--service-brandweer)',
+  Ambulance: 'var(--service-ambulance)',
+  Politie: 'var(--service-politie)',
 }
 
 function getColor(service) {
-  return SERVICE_COLORS[service] || '#718096'
+  return SERVICE_COLORS[service] || 'var(--service-default)'
 }
 
 function urlBase64ToUint8Array(base64String) {
@@ -403,7 +403,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="header">
+      <header className="header glass-panel">
         <div className="header-top">
           <h1>P2000 Reader</h1>
           <div className="header-right">
@@ -477,7 +477,7 @@ export default function App() {
         {filteredAlerts.map(alert => (
           <div
             key={alert.id}
-            className="alert-card"
+            className="alert-card glass-panel"
             style={{ borderLeftColor: getColor(alert.service) }}
           >
             <div className="alert-emoji">{alert.emoji}</div>
