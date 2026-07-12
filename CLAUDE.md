@@ -53,3 +53,9 @@ Anti-patterns: numbered 01/02/03 markers unless content is a genuine sequence; m
 
 1. `npm run dev` locally and actually look at it — this is a live WebSocket app. Check both the connected and disconnected states, and a few different alert types (Brandweer/Ambulance/Politie), not just one static screenshot.
 2. Run the full `scripts/deploy.sh`, even for CSS-only changes — it rebuilds the Vite bundle as part of the remote deploy.
+
+## When to commit
+
+- Create commits after completing each logical unit of work.
+- Do not push to the remote repository unless asked.
+- Use conventional commit messages (e.g. "feat:", "fix:", "refactor:").
