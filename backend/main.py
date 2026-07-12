@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import signal
 import sys
 from contextlib import asynccontextmanager
@@ -39,6 +40,26 @@ P2000_URL = "http://www.p2000-online.net/p2000.py"
 
 EMOJI_MAP = {"Brandweer": "🚒", "Ambulance": "🚑", "Politie": "🚔"}
 SERVICE_CLASS_MAP = {"Br": "Brandweer", "Am": "Ambulance", "Po": "Politie"}
+
+# Known P2000 CAD abbreviations per place — mirrors CITY_ALIASES in frontend/web/src/App.jsx.
+CITY_ALIASES = {
+    "Den Haag": ["SGRAVH", "S-GRAVENHAGE", "Gravenhage"],
+    "'s-Hertogenbosch": ["DEN BOSCH", "Den Bosch", "S-HERTOGENBOSCH", "HERTOGENBOSCH"],
+    "Rotterdam": ["RTTDM"],
+    "Amsterdam": ["ADAM", "A'DAM"],
+    "Schiedam": ["SCHIDM"],
+    "Waddinxveen": ["WADDXV"],
+    "Leeuwarden": ["LWD"],
+}
+
+
+def _city_matches_alert(city: str, message: str) -> bool:
+    """Word-boundary-aware check mirroring cityMatchesAlert() in App.jsx."""
+    for term in [city, *CITY_ALIASES.get(city, [])]:
+        escaped = re.escape(term)
+        if re.search(rf"(?<!\w){escaped}(?!\w)", message, re.IGNORECASE):
+            return True
+    return False
 
 
 # --- State ---
@@ -142,6 +163,8 @@ async def _send_web_push(alert: dict) -> None:
     dead = []
     for sub in list(web_push_subscriptions):
         if sub.get("filter_region") and sub["filter_region"] != alert.get("region", ""):
+            continue
+        if sub.get("filter_city") and not _city_matches_alert(sub["filter_city"], alert.get("message", "")):
             continue
         try:
             parsed = urlparse(sub["endpoint"])
@@ -264,6 +287,7 @@ class _WebPushSub(BaseModel):
     endpoint: str
     keys: dict
     filter_region: str = ""
+    filter_city: str = ""
 
 
 @app.post("/api/subscribe")
